@@ -71,6 +71,11 @@ cd mcast-1/build-opt
 ./publisher 239.0.0.1 5000 100 1 10
 ```
 
+then run the analyzer (within the venv):
+../analyze_stats.py
+
+
 ## Tests
 ./subscriber 239.0.0.1 5000
 ./publisher 239.0.0.1 5000 100 1 10
+
