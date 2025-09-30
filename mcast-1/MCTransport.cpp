@@ -82,7 +82,7 @@ bool MCTransport::init_recv(const char* group_addr, int port) {
     static const SocketOpt recv_opts[] = {
         {SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), true, "SO_REUSEADDR"},
         {SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf), true, "SO_RCVBUF"},
-        {SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll), false, "SO_BUSY_POLL"},
+        // {SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll), false, "SO_BUSY_POLL"},
         {SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority), true, "SO_PRIORITY"},
         {IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), true, "IP_ADD_MEMBERSHIP"}
     };
