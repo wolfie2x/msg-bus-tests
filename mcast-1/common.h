@@ -2,7 +2,10 @@
 #include <cstdint>
 #include <cstddef>
 
-#define DBG 2   // DEBUG level
+#define DBG 0   // DEBUG level
+
+#define SUB_CORE  1  // subscriber thread core
+#define PUB_CORE  2  // publisher thread core
 
 #define CMD_NONE    0     // no special command
 #define CMD_WARMUP  -1     // warmup message

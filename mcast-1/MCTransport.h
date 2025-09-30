@@ -13,15 +13,28 @@
 
 class MCTransport : public ITransport {
 public:
-    MCTransport(const char* group_addr, int port);
+    MCTransport();
     ~MCTransport();
+
+    // for sender
+    bool init_send(const char* group_addr, int port);
     void* get_send_buffer(size_t len) override;
     bool send(size_t len) override;
+    
+    // for receiver
+    bool init_recv(const char* group_addr, int port);
     int run_recv_loop(RecvMode mode) override;
     void set_callback(ITransportCB* cb) override;
+
 private:
-    int sockfd;
-    sockaddr_in addr;
+    // Send socket and address
+    int send_sockfd;
+    sockaddr_in send_addr;
+    
+    // Receive socket and address
+    int recv_sockfd;
+    sockaddr_in recv_addr;
+    
     alignas(8) char buf_[1500];
     ITransportCB* callback_ = nullptr;
     uint64_t mc_send_seq_ = 0;

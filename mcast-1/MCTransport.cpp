@@ -1,19 +1,107 @@
 #include "MCTransport.h"
 #include <cstdio>
+#include <netinet/ip.h>
+#include <sys/socket.h>
 
-MCTransport::MCTransport(const char* group_addr, int port) {
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(group_addr);
-    // For multicast receive, join group (not used in send-only)
-    // For send, just set up socket and addr
-    // Buffer is statically sized, nothing else needed
+// Socket option configuration structure
+struct SocketOpt {
+    int level;
+    int option;
+    const void* value;
+    size_t value_len;
+    bool critical;  // If false, failure won't abort initialization
+    const char* name;  // For error reporting
+};
+
+// Helper function to apply socket options from array
+static bool apply_socket_options(int sockfd, const SocketOpt* opts, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (setsockopt(sockfd, opts[i].level, opts[i].option, opts[i].value, opts[i].value_len) < 0) {
+            if (opts[i].critical) {
+                close(sockfd);
+                return false;
+            } else {
+                printf("Warning: %s not supported, continuing without it.\n", opts[i].name);
+            }
+        }
+    }
+    return true;
+}
+
+MCTransport::MCTransport() : send_sockfd(-1), recv_sockfd(-1) {
+    memset(&send_addr, 0, sizeof(send_addr));
+    memset(&recv_addr, 0, sizeof(recv_addr));
 }
 
 MCTransport::~MCTransport() {
-    if (sockfd >= 0) close(sockfd);
+    if (send_sockfd >= 0) close(send_sockfd);
+    if (recv_sockfd >= 0) close(recv_sockfd);
+}
+
+
+bool MCTransport::init_send(const char* group_addr, int port) {
+    send_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (send_sockfd < 0) return false;
+    
+    // Ultra low latency socket options
+    int sndbuf = 8192;
+    int tos = IPTOS_LOWDELAY;
+    int ttl = 1;
+    static const SocketOpt send_opts[] = {
+        {SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf), true, "SO_SNDBUF"},              // Small buffer for low latency
+        {IPPROTO_IP, IP_TOS, &tos, sizeof(tos), true, "IP_TOS"},                          // Low delay priority
+        {IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl), true, "IP_MULTICAST_TTL"}       // Local network only
+    };
+
+    if (!apply_socket_options(send_sockfd, send_opts, sizeof(send_opts)/sizeof(send_opts[0]))) {
+        send_sockfd = -1;
+        return false;
+    }
+
+    send_addr.sin_family = AF_INET;
+    send_addr.sin_port = htons(port);
+    send_addr.sin_addr.s_addr = inet_addr(group_addr);
+
+    return true;
+}
+
+bool MCTransport::init_recv(const char* group_addr, int port) {
+    recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (recv_sockfd < 0) return false;
+    
+    // Ultra low latency socket options
+    int reuse = 1;
+    int rcvbuf = 8192;
+    int busy_poll = 100;     // in microseconds
+    int priority = 6;
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr(group_addr);
+    mreq.imr_interface.s_addr = INADDR_ANY;
+
+    static const SocketOpt recv_opts[] = {
+        {SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), true, "SO_REUSEADDR"},
+        {SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf), true, "SO_RCVBUF"},
+        {SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll), false, "SO_BUSY_POLL"},
+        {SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority), true, "SO_PRIORITY"},
+        {IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), true, "IP_ADD_MEMBERSHIP"}
+    };
+
+    if (!apply_socket_options(recv_sockfd, recv_opts, sizeof(recv_opts)/sizeof(recv_opts[0]))) {
+        recv_sockfd = -1;
+        return false;
+    }
+
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_port = htons(port);
+    recv_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(recv_sockfd, (sockaddr*)&recv_addr, sizeof(recv_addr)) < 0) {
+        close(recv_sockfd);
+        recv_sockfd = -1;
+        return false;
+    }
+
+    return true;
 }
 
 bool MCTransport::send(size_t len) {
@@ -22,20 +110,20 @@ bool MCTransport::send(size_t len) {
     hdr->mc_seq = ++mc_send_seq_;
     hdr->payload_len = static_cast<uint32_t>(len);
     size_t total = sizeof(MCHeader) + len;
-    ssize_t sent = sendto(sockfd, buf_, total, 0, (sockaddr*)&addr, sizeof(addr));
+    ssize_t sent = sendto(send_sockfd, buf_, total, 0, (sockaddr*)&send_addr, sizeof(send_addr));
     return sent == (ssize_t)total;
 }
 
 
 int MCTransport::run_recv_loop(RecvMode mode) {
-    socklen_t addrlen = sizeof(addr);
+    socklen_t addrlen = sizeof(recv_addr);
     int flags = 0;
     if (mode == RecvMode::Polling)
         flags |= MSG_DONTWAIT;
 
     // Polling mode: loop until full message is received
     while (true) {
-        ssize_t n = recvfrom(sockfd, buf_, sizeof(buf_), flags, (sockaddr*)&addr, &addrlen);
+        ssize_t n = recvfrom(recv_sockfd, buf_, sizeof(buf_), flags, (sockaddr*)&recv_addr, &addrlen);
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) // No data available, continue polling
                 continue;

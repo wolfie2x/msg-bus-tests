@@ -41,7 +41,8 @@ make -j$(nproc)
 sudo dnf install python3.13-devel
 python -m venv venv
 source venv/bin/activate
-pip3 install pandas hdrhistogram
+pip install --upgrade pip
+pip install -r requirements.txt
 
 
 ## Usage
@@ -72,4 +73,4 @@ cd mcast-1/build-opt
 
 ## Tests
 ./subscriber 239.0.0.1 5000
-./publisher 239.0.0.1 5000 100 1000 10
+./publisher 239.0.0.1 5000 100 1 10

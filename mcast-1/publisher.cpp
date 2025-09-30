@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include "MCTransport.h"
+#include <pthread.h>
 
 
 Publisher::Publisher(ITransport* transport) : 
@@ -93,6 +94,17 @@ int main(int argc, char* argv[]) {
     }
     printf("Publisher starting ...\n");
 
+    // Pin this thread to a fixed core (e.g., core 0)
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(PUB_CORE, &cpuset);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0) {
+        perror("pthread_setaffinity_np");
+    }else {
+        printf("Publisher: pinned to core %d\n", PUB_CORE);
+    }
+    
+    
     const char* mcast_addr = argv[1];
     uint16_t port = atoi(argv[2]);
 
@@ -112,7 +124,12 @@ int main(int argc, char* argv[]) {
     printf("msg_size=%zu, msg_rate=%d, duration=%ds, total_msgs=%d\n",
            msg_size, msg_rate, duration_sec, msg_count);
     
-    MCTransport* transport = new MCTransport(mcast_addr, port);
+    MCTransport* transport = new MCTransport();
+    if (!transport->init_send(mcast_addr, port)) {
+        fprintf(stderr, "Failed to initialize send transport\n");
+        delete transport;
+        return 1;
+    }
     
     Publisher pub(transport);
     pub.Init(msg_size, msg_rate, msg_count);
