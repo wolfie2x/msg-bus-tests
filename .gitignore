@@ -1,0 +1,12 @@
+#images/
+#audio/
+#app.db
+#.vscode/
+venv*/
+__pycache__/
+node_modules/
+*.pem
+*.pyc
+migrations/
+build*/
+
