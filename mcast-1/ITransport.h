@@ -18,7 +18,7 @@ public:
 
 class ITransport {
 public:
-    virtual ~ITransport() = default;
+    virtual ~ITransport(){};
     virtual void* get_send_buffer(size_t len) = 0;
     // Send data. Returns true on success.
     virtual bool send(size_t len) = 0;

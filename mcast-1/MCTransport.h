@@ -26,7 +26,7 @@ private:
     ITransportCB* callback_ = nullptr;
     uint64_t mc_send_seq_ = 0;
     uint64_t mc_recv_seq_ = 0;  // last received seq
-    struct MsgHeader {
+    struct MCHeader {
         uint64_t mc_seq;        // multicast seq
         uint32_t payload_len;   // payload length in bytes
     };

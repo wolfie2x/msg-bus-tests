@@ -8,7 +8,8 @@
 
 class Stat {
 public:
-    Stat(size_t max_msgs) : records_(max_msgs), idx_(0) {}
+    Stat(size_t max_msgs, const std::string& filename) : 
+        records_(max_msgs), idx_(0), filename_(filename) {}
 
     // Record sequence number and latency in nanoseconds
     void record(uint64_t seq, int64_t latency_ns) {
@@ -21,13 +22,14 @@ public:
     }
 
     // Write all recorded seq/latency pairs to a CSV file
-    void write_csv(const std::string& filename) const {
-        std::ofstream out(filename);
+    void write_csv() const {
+        std::ofstream out(filename_);
         out << "seq,latency_ns\n";
         for (size_t i = 0; i < idx_; ++i) {
             out << records_[i].seq << "," << records_[i].latency << "\n";
         }
         out.close();
+        printf("Stats: Latencies written to file %s\n", filename_.c_str());
     }
 
     size_t size() const { return idx_; }
@@ -39,4 +41,5 @@ private:
     };
     std::vector<Record> records_;
     size_t idx_;
+    std::string filename_;
 };

@@ -1,0 +1,109 @@
+
+
+
+
+MCTransport::MCTransport(const char* group_addr, int port) {
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("socket creation failed");
+        return;
+    }
+    
+    // Set socket to reuse address
+    int reuse = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        perror("setsockopt SO_REUSEADDR failed");
+    }
+    
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = INADDR_ANY;  // Bind to any interface for receiving
+    
+    // Bind socket to port for receiving
+    if (bind(sockfd, (sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind failed");
+        close(sockfd);
+        sockfd = -1;
+        return;
+    }
+    
+    // Join multicast group
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr(group_addr);
+    mreq.imr_interface.s_addr = INADDR_ANY;
+    if (setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        perror("setsockopt IP_ADD_MEMBERSHIP failed");
+        close(sockfd);
+        sockfd = -1;
+        return;
+    }
+    
+    // Set up send address (different from bind address)
+    memset(&send_addr, 0, sizeof(send_addr));
+    send_addr.sin_family = AF_INET;
+    send_addr.sin_port = htons(port);
+    send_addr.sin_addr.s_addr = inet_addr(group_addr);
+}
+
+MCTransport::~MCTransport() {
+    if (sockfd >= 0) {
+        // Leave multicast group before closing socket
+        struct ip_mreq mreq;
+        mreq.imr_multiaddr = send_addr.sin_addr;
+        mreq.imr_interface.s_addr = INADDR_ANY;
+        setsockopt(sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+        close(sockfd);
+    }
+}
+
+
+
+
+
+Subscriber::Subscriber(const char* mcast_addr, uint16_t port)
+    : stats_(1000000) // default max_msgs
+{
+    sock_ = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    int reuse = 1;
+    setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    addr_.sin_family = AF_INET;
+    addr_.sin_port = htons(port);
+    addr_.sin_addr.s_addr = htonl(INADDR_ANY);
+    bind(sock_, (sockaddr*)&addr_, sizeof(addr_));
+    ip_mreq mreq = {};
+    inet_pton(AF_INET, mcast_addr, &mreq.imr_multiaddr);
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    setsockopt(sock_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+}
+
+ssize_t Subscriber::recv(void* payload_buf, size_t buf_size, MsgHeader& header) {
+    alignas(8) char buf[1500];
+    ssize_t n = ::recv(sock_, buf, sizeof(buf), 0);
+    if (n < (ssize_t)sizeof(MsgHeader)) return -1;
+    MsgHeader* hdr = reinterpret_cast<MsgHeader*>(buf);
+    header = *hdr;
+    size_t payload_len = n - sizeof(MsgHeader);
+    if (payload_len > buf_size) return -1;
+    memcpy(payload_buf, buf + sizeof(MsgHeader), payload_len);
+    return payload_len;
+}
+
+
+
+class Subscriber {
+public:
+    Subscriber(const char* mcast_addr, uint16_t port);
+    ~Subscriber();
+    // Receives a message, returns payload length or -1 on error
+    ssize_t recv(void* payload_buf, size_t buf_size, MsgHeader& header);
+    void run(const char* csv_file = "latency.csv");
+
+    // ITransportCB implementation
+    void on_data(const void* data, size_t len, uint64_t mc_seq);
+
+private:
+    int sock_ = -1;
+    sockaddr_in addr_{};
+    Stat stats_;
+};
