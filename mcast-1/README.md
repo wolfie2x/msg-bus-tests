@@ -50,32 +50,62 @@ pip install -r requirements.txt
 
 ### Publisher
 ```
-./publisher <mcast_addr> <port> <msg-size> <msg-rate> <duration-sec>
+./publisher <core> <sender_id> <mcast_addr> <port> <msg-size> <msg-rate> <duration-sec>
 ```
-* <duration-sec> is in seconds. The publisher will send <msg-rate> × <duration-sec> messages.
+* `<core>` is the CPU core to pin the publisher thread to (int64_t)
+* `<sender_id>` is a unique 64-bit integer identifier for the publisher
+* `<duration-sec>` is in seconds. The publisher will send `<msg-rate>` × `<duration-sec>` messages.
+
 
 ### Subscriber
 ```
-./subscriber <mcast_addr> <port>
+./subscriber <core> <mcast_addr> <port>
 ```
+* `<core>` is the CPU core to pin the subscriber thread to (int64_t)
+
+### Sequencer
+```
+./sequencer <core> <recv_mcast_addr> <recv_port> <send_mcast_addr> <send_port>
+```
+* `<core>` is the CPU core to pin the sequencer thread to (int64_t)
+The sequencer listens on the `recv_mcast_addr:recv_port`, timestamps and tags messages, then forwards them to `send_mcast_addr:send_port`.
 
 ## Example
 ```
 # Change to your build directory, e.g.:
 cd mcast-1/build-opt
 
-# Run subscriber (receives messages and writes latency stats to latency.csv)
-./subscriber 239.0.0.1 5000
+# Run subscriber (core=0, receives messages and writes latency stats to latency.csv)
+./subscriber 0 239.0.0.1 5000
 
-# Run publisher (sends messages of 100 bytes at 1 msg/sec for 10 seconds)
-./publisher 239.0.0.1 5000 100 1 10
+
+# Run publisher (sender_id=1, core=0, sends messages of 100 bytes at 1 msg/sec for 10 seconds)
+./publisher 2 1 239.0.0.1 5000 100 1 10
+
+# Example using a sequencer between publisher and subscriber
+# Publisher -> Sequencer -> Subscriber
+# Publisher sends to recv group 239.0.0.1:5000
+# Sequencer listens on 239.0.0.1:5000 and forwards to 239.0.0.2:6000
+# Subscriber listens on 239.0.0.2:6000
+
+
+./subscriber 0 239.0.0.2 6000
+./sequencer 1 239.0.0.1 5000 239.0.0.2 6000
+
+./publisher 2 1 239.0.0.1 5000 100 1 10
 ```
 
 then run the analyzer (within the venv):
 ../analyze_stats.py
 
 
-## Tests
-./subscriber 239.0.0.1 5000
-./publisher 239.0.0.1 5000 100 1 10
+## temp
+cd build-opt
+source ../../venv/bin/activate
+
+./subscriber 1 239.0.0.2 6000 && ../analyze_stats.py
+
+./sequencer 2 239.0.0.1 5000 239.0.0.2 6000
+
+./publisher 3 1 239.0.0.1 5000 100 1 10
 

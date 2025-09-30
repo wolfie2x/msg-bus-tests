@@ -87,30 +87,32 @@ void Publisher::start_publishing() {
 
 
 
+
 int main(int argc, char* argv[]) {
-    if (argc != 6) {
-        fprintf(stderr, "Error.. Usage: %s <mcast_addr> <port> <msg-size> <msg-rate> <duration-sec>\n", argv[0]);
+    if (argc != 8) {
+        fprintf(stderr, "Error.. Usage: %s <core> <sender_id> <mcast_addr> <port> <msg-size> <msg-rate> <duration-sec>\n", argv[0]);
         return 1;
     }
     printf("Publisher starting ...\n");
 
-    // Pin this thread to a fixed core (e.g., core 0)
+    int64_t core = atoll(argv[1]);
+    int64_t sender_id = atoll(argv[2]);
+    const char* mcast_addr = argv[3];
+    uint16_t port = atoi(argv[4]);
+    size_t msg_size = atoi(argv[5]);
+    int msg_rate = atoi(argv[6]); // messages per second
+    int duration_sec = atoi(argv[7]); // seconds
+
+    // Pin this thread to the specified core
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(PUB_CORE, &cpuset);
+    CPU_SET(core, &cpuset);
     if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0) {
         perror("pthread_setaffinity_np");
-    }else {
-        printf("Publisher: pinned to core %d\n", PUB_CORE);
+    } else {
+        printf("Publisher: pinned to core %ld\n", core);
     }
-    
-    
-    const char* mcast_addr = argv[1];
-    uint16_t port = atoi(argv[2]);
 
-    size_t msg_size = atoi(argv[3]);
-    int msg_rate = atoi(argv[4]); // messages per second
-    int duration_sec = atoi(argv[5]); // seconds
     if (msg_size < 1 || msg_size > 1400) {
         fprintf(stderr, "msg-size must be between 1 and 1400\n");
         return 1;
@@ -123,17 +125,17 @@ int main(int argc, char* argv[]) {
     int msg_count = msg_rate * duration_sec;
     printf("msg_size=%zu, msg_rate=%d, duration=%ds, total_msgs=%d\n",
            msg_size, msg_rate, duration_sec, msg_count);
-    
+
     MCTransport* transport = new MCTransport();
-    if (!transport->init_send(mcast_addr, port)) {
+    if (!transport->init_send(sender_id, mcast_addr, port)) {
         fprintf(stderr, "Failed to initialize send transport\n");
         delete transport;
         return 1;
     }
-    
+
     Publisher pub(transport);
     pub.Init(msg_size, msg_rate, msg_count);
     pub.start_publishing();
-    
+
     return 0;
 }

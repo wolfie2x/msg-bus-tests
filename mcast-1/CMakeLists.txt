@@ -14,3 +14,9 @@ add_executable(subscriber
 )
 
 target_include_directories(subscriber PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(sequencer
+    sequencer.cpp MCTransport.cpp
+)
+
+target_include_directories(sequencer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

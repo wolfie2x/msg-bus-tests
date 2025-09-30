@@ -13,7 +13,7 @@ enum class RecvMode {
 class ITransportCB {
 public:
     virtual ~ITransportCB() = default;
-    virtual void on_data(const void* data, size_t len, uint64_t mc_seq) = 0;
+    virtual void on_data(int64_t sender_id, const void* data, size_t len, int64_t mc_seq) = 0;
 };
 
 class ITransport {

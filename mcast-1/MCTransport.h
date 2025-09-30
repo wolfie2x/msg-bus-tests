@@ -17,7 +17,7 @@ public:
     ~MCTransport();
 
     // for sender
-    bool init_send(const char* group_addr, int port);
+    bool init_send(int64_t sender_id, const char* group_addr, int port);
     void* get_send_buffer(size_t len) override;
     bool send(size_t len) override;
     
@@ -37,11 +37,14 @@ private:
     
     alignas(8) char buf_[1500];
     ITransportCB* callback_ = nullptr;
-    uint64_t mc_send_seq_ = 0;
-    uint64_t mc_recv_seq_ = 0;  // last received seq
-    struct MCHeader {
-        uint64_t mc_seq;        // multicast seq
-        uint32_t payload_len;   // payload length in bytes
+    int64_t sender_id_ = 0;
+    int64_t mc_send_seq_ = 0;
+    int64_t mc_recv_seq_[MAX_SENDERS] = {0};  // last received seq per sender
+
+    struct alignas(8) MCHeader {
+        int64_t sender_id;     // sender identifier
+        int64_t mc_seq;        // multicast seq
+        int64_t payload_len;   // payload length in bytes
     };
 };
 

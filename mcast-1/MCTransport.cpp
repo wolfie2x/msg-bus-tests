@@ -39,7 +39,8 @@ MCTransport::~MCTransport() {
 }
 
 
-bool MCTransport::init_send(const char* group_addr, int port) {
+bool MCTransport::init_send(int64_t sender_id, const char* group_addr, int port) {
+    sender_id_ = sender_id;
     send_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (send_sockfd < 0) return false;
     
@@ -107,8 +108,9 @@ bool MCTransport::init_recv(const char* group_addr, int port) {
 bool MCTransport::send(size_t len) {
     if (len + sizeof(MCHeader) > sizeof(buf_)) return false;
     MCHeader* hdr = reinterpret_cast<MCHeader*>(buf_);
+    hdr->sender_id = sender_id_;
     hdr->mc_seq = ++mc_send_seq_;
-    hdr->payload_len = static_cast<uint32_t>(len);
+    hdr->payload_len = static_cast<int64_t>(len);
     size_t total = sizeof(MCHeader) + len;
     ssize_t sent = sendto(send_sockfd, buf_, total, 0, (sockaddr*)&send_addr, sizeof(send_addr));
     return sent == (ssize_t)total;
@@ -134,24 +136,43 @@ int MCTransport::run_recv_loop(RecvMode mode) {
             printf("ERR: Incomplete header received: %zd bytes\n", n);
             continue; 
         }
+
         MCHeader* hdr = reinterpret_cast<MCHeader*>(buf_);
-        size_t payload_len = hdr->payload_len;
-        if (hdr->mc_seq <= mc_recv_seq_) {
-            // Duplicate or out-of-order message, ignore
-            printf("ERR: Duplicate or out-of-order message received: %lu\n", hdr->mc_seq);
+        
+        auto sender = hdr->sender_id;
+        
+        // Validate sender_id bounds
+        if (sender < 0 || sender >= MAX_SENDERS) {
+            printf("ERR: Invalid sender_id: %ld\n", sender);
             continue;
-        } else if (hdr->mc_seq > mc_recv_seq_ + 1) {
-            // Missed messages
-            printf("WARN: Missed messages. Last seq=%lu, received seq=%lu\n", mc_recv_seq_, hdr->mc_seq);
         }
-        if (n < (ssize_t)(sizeof(MCHeader) + payload_len)) {
+        
+        auto last_seq = mc_recv_seq_[sender];
+        
+        if (hdr->mc_seq == 1) {
+            printf("Resetting mc_seq to 0: sender=%ld\n", sender);
+            mc_recv_seq_[sender] = 0;
+        } else if (hdr->mc_seq <= last_seq) {
+            // Duplicate or out-of-order message, ignore
+            printf("ERR: Duplicate or out-of-order message: sender=%ld: received seq=%ld, last seq=%ld\n", 
+                    sender, hdr->mc_seq, last_seq);
+            continue;
+        } else if (hdr->mc_seq > last_seq + 1) {
+            // Missed messages
+            printf("WARN: Missed messages: sender=%ld. Last seq=%ld, received seq=%ld\n", 
+                    sender, last_seq, hdr->mc_seq);
+        }
+    
+        if (n < (ssize_t)(sizeof(MCHeader) + hdr->payload_len)) {
             printf("ERR: Incomplete message received: %zd bytes\n", n);
             continue;
         }
-        if (callback_)
-            callback_->on_data(buf_ + sizeof(MCHeader), payload_len, hdr->mc_seq);
+
+        mc_recv_seq_[sender] = hdr->mc_seq;
         
-        mc_recv_seq_ = hdr->mc_seq;
+        if (callback_)
+            callback_->on_data(sender, buf_ + sizeof(MCHeader), hdr->payload_len, hdr->mc_seq);
+    
     }
 }
 
